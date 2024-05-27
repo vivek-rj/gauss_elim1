@@ -22,23 +22,7 @@ match E with
     Matrix.updateRow (Matrix.updateRow M i (M j)) j newr
 | rowMulAdd c i j => M.updateRow i (M i + (c • (M j)))
 
-def elemMat (E : ElemOp (m:=m)) := ElemOpOnMatrix I E
-
-lemma findIdx_exists_of_lt_length (p : α → Bool) (l : List α) (h : l.findIdx p < l.length) : ∃ x∈l, p x
-   := by
-   have := List.findIdx_get (p:=p) (w:=h)
-   use l.get ⟨List.findIdx p l, h⟩
-   constructor
-   · exact List.get_mem l (List.findIdx p l) h
-   · exact this
-
-lemma findIdx_notExists_of_eq_length (l : List α) (p : α → Bool) (hl : l.findIdx p = l.length) : ∀ x∈l, p x = false := by
-  intro x xl
-  by_cases h:p x
-  have := List.findIdx_lt_length_of_exists ⟨x,xl,h⟩
-  have := ne_of_lt this
-  contradiction
-  simpa using h
+def elemMat (E : ElemOp (m:=m)) := ElemOpOnMatrix (Matrix.diagonal (fun _:Fin m => (1:Rat))) E
 
 lemma findIdx_eq_length_of_notExists (l : List α) (p : α → Bool) (hl : ∀ x∈l, p x = false) : l.findIdx p = l.length := by
   induction' l with a as ih
@@ -65,7 +49,12 @@ lemma nonzVecHasNonz (h : ¬vec_allZero l) : ∃ x∈l.toList, x≠0 := by
   push_neg at h
   convert h; simp
 
-lemma Vector_toList_get (v : Vector α k) : ∀ i, v.get i = v.toList.get ⟨i,by simp⟩ := by intro i; rfl
+lemma nonzListHasNonz (h : ¬list_allZero l) : ∃ x∈l, x≠0 := by
+  rw [List.all_eq_true] at h
+  push_neg at h
+  convert h; simp
+
+lemma vector_toList_get (v : Vector α k) : ∀ i, v.get i = v.toList.get ⟨i,by simp⟩ := by intro i; rfl
 
 lemma findNonzCol_get_HasNonz (h : findNonzCol M < (colVecofMat M).length) :
   ∃ x ∈ ((colVecofMat M).get ⟨findNonzCol M,h⟩).toList, x≠0 := by
@@ -78,7 +67,7 @@ lemma findNonzCol_get_HasNonz (h : findNonzCol M < (colVecofMat M).length) :
   use x
   constructor
   unfold findNonzCol
-  rw [Vector_toList_get (colVecofMat M)]
+  rw [vector_toList_get (colVecofMat M)]
   convert hx using 4
   simp only [Fin.mk]
   congr
@@ -89,48 +78,14 @@ lemma findNonzCol_get_HasNonz (h : findNonzCol M < (colVecofMat M).length) :
 
 def isZeroMatrix' : Bool := findNonzCol M = (colVecofMat M).length
 
-abbrev rowsAfteri (i : Fin m) : Fin (m-i) → Fin m :=
-  fun k => ⟨k+i,Nat.add_lt_of_lt_sub k.2⟩
-
-abbrev colsAfterj (j : Fin n) : Fin (n-j) → Fin n :=
-  fun l => ⟨l+j,Nat.add_lt_of_lt_sub l.2⟩
-
 --Gives the block matrix starting from (i,j)th entry to (m,n)th entry
 def botRightij (i : Fin m) (j : Fin n) : Matrix (Fin (m-i)) (Fin (n-j)) Rat :=
-  M.submatrix (rowsAfteri i) (colsAfterj j)
+  M.submatrix (fun k => ⟨k+i,Nat.add_lt_of_lt_sub k.2⟩) (fun l => ⟨l+j,Nat.add_lt_of_lt_sub l.2⟩)
 
-lemma vector_toList_get (v : Vector α k) (i : Fin k) : v.toList.get (i.cast (by simp)) = v.get i := by cases v; rfl
+lemma vector_toList_get' (v : Vector α k) (i : Fin k) : v.toList.get (i.cast (by simp)) = v.get i := by cases v; rfl
 
 /- Given a mxn matrix and a point (i,j) in it, it will find the pivot column and return
 elementary matrices that swap the pivot row with the ith row and scale the pivot to 1-/
-def findPivot_ij' (i : Fin m) (j : Fin n) : List (Matrix (Fin m) (Fin m) Rat) :=
-  let M' := botRightij M i j
-  if h1 : findNonzCol M' = (colVecofMat M').length then [1]
-  else
-    if h2 : findNonzCol M' < (colVecofMat M').length then
-      let pcol := (colVecofMat M').get ⟨findNonzCol M',h2⟩
-      have h3 : pcol.toList.findIdx (fun x => x≠0) < pcol.length := by
-        have h4 := findNonzCol_get_HasNonz M' h2
-        unfold_let pcol
-        simp_rw [← Vector.toList_length ((colVecofMat M').get ⟨findNonzCol M', h2⟩)]
-        apply List.findIdx_lt_length_of_exists
-        convert h4; simp
-      have h3a : pcol.length = (m-i) := by unfold_let pcol; simp
-      have h3' : List.findIdx (fun x => decide (x ≠ 0)) pcol.toList < m := by
-        apply lt_of_le_of_lt' _ h3; rw [h3a]; exact Nat.sub_le m ↑i
-      have h3b : pcol.toList.findIdx (fun x => x≠0) < pcol.toList.length := by simp_rw [Vector.toList_length pcol]; exact h3
-      have h5 : (pcol.get ⟨pcol.toList.findIdx (fun x => x≠0),h3⟩) ≠ 0 := by
-        rw [← vector_toList_get pcol ⟨pcol.toList.findIdx (fun x => x≠0),h3⟩]
-        have := List.findIdx_get (w:=h3b)
-        simp at this
-        convert this
-        simp only [Fin.coe_cast, Bool.decide_not]
-      [elemMat (scalarMul (1/(pcol.get ⟨pcol.toList.findIdx (fun x => x≠0),h3⟩)) (one_div_ne_zero h5) i) ,elemMat (rowSwap i (⟨pcol.toList.findIdx (fun x => x≠0),h3'⟩+i))]
-    else
-      have h4 := findNonzCol_le_numCol M'
-      have nh4 := not_le.mpr (lt_of_le_of_ne (not_lt.mp h2) (Ne.symm h1))
-      absurd h4 nh4
-
 def findPivot_ij (i : Fin m) (j : Fin n) : Option (List (Matrix (Fin m) (Fin m) Rat)) :=
   let M' := botRightij M i j
   if h1 : findNonzCol M' = (colVecofMat M').length then none
@@ -148,7 +103,7 @@ def findPivot_ij (i : Fin m) (j : Fin n) : Option (List (Matrix (Fin m) (Fin m) 
         apply lt_of_le_of_lt' _ h3; rw [h3a]; exact Nat.sub_le m ↑i
       have h3b : pcol.toList.findIdx (fun x => x≠0) < pcol.toList.length := by simp_rw [Vector.toList_length pcol]; exact h3
       have h5 : (pcol.get ⟨pcol.toList.findIdx (fun x => x≠0),h3⟩) ≠ 0 := by
-        rw [← vector_toList_get pcol ⟨pcol.toList.findIdx (fun x => x≠0),h3⟩]
+        rw [← vector_toList_get' pcol ⟨pcol.toList.findIdx (fun x => x≠0),h3⟩]
         have := List.findIdx_get (w:=h3b)
         simp at this
         convert this
@@ -180,29 +135,13 @@ def mat := !![0,2,3;0,5,6;0,8,(9:Rat)]
 3. End when (i,j) = (m,n)
 -/
 
-def rowEchelonStep (i : Fin m) (j : Fin n) : (Matrix (Fin m) (Fin n) Rat)×Bool :=
+def rowEchelonStep (i : Fin m) (j : Fin n) : (Matrix (Fin m) (Fin n) Rat) :=
   match (findPivot_ij M i j) with
-  | none => (M,false)
-  | some listmat => ((elimColBelow_ij (listmat.prod * M) i j).prod * (listmat.prod * M),true)
+  | none => M
+  | some listmat => (elimColBelow_ij (listmat.prod * M) i j).prod * (listmat.prod * M)
 
-def tmat := !![1,2,3;4,5,(6:Rat)]
-#eval rowEchelonStep tmat 0 0
-#eval rowEchelonStep (rowEchelonStep tmat 0 0).1 1 1
-
-def tmat1 := !![1,-2,1,-1;2,1,-3,8;4,-7,1,(-2:Rat)]
-#eval rowEchelonStep tmat1 0 0
--- #eval rowEchelonStep (rowEchelonStep tmat1 0 0).1 1 1
--- #eval rowEchelonStep (rowEchelonStep (rowEchelonStep tmat1 0 0) 1 1) 2 2
-#eval rowEchelonStep mat 2 2
-
-/-
-1. Apply rowEchelonStep at (0,0) to M
-2. If false, apply rowEchelonStep at (0,1) to M
-   If true, apply rowEchelonStep at (1,1) to the matrix from the previous step
--/
-
-def rowEchelonList_ij' (A : Matrix (Fin m) (Fin n) Rat) (i : Fin m) (j : Fin n) : (Option (List (Matrix (Fin m) (Fin m) Rat))) × (Matrix (Fin m) (Fin n) Rat) :=
-  let A_step := (rowEchelonStep A i j).1
+def rowEchelonList (A : Matrix (Fin m) (Fin n) Rat) (i : Fin m) (j : Fin n) : (Option (List (Matrix (Fin m) (Fin m) Rat))) × (Matrix (Fin m) (Fin n) Rat) :=
+  let A_step := rowEchelonStep A i j
   if hi : i.val = m-1 then
     (findPivot_ij A_step ⟨m-1,Nat.sub_one_lt_of_le hm (le_refl m)⟩ j,
      ((findPivot_ij A_step ⟨m-1,Nat.sub_one_lt_of_le hm (le_refl m)⟩ j).getD []).prod * A_step)
@@ -214,9 +153,9 @@ def rowEchelonList_ij' (A : Matrix (Fin m) (Fin n) Rat) (i : Fin m) (j : Fin n) 
     else
       have hij : i.val < m-1 ∧ j.val < n-1 := ⟨lt_of_le_of_ne (Nat.le_sub_one_of_lt i.2) hi, lt_of_le_of_ne (Nat.le_sub_one_of_lt j.2) hj⟩
       match (findPivot_ij A i j) with
-      | none => (rowEchelonList_ij' A_step i ⟨j+1,Nat.add_lt_of_lt_sub hij.2⟩)
-      | some l => ((rowEchelonList_ij' A_step ⟨i+1,Nat.add_lt_of_lt_sub hij.1⟩ ⟨j+1,Nat.add_lt_of_lt_sub hij.2⟩).1.getD [] ++ elimColBelow_ij ((List.prod l) * A) i j ++ l,
-                    (rowEchelonList_ij' A_step ⟨i+1,Nat.add_lt_of_lt_sub hij.1⟩ ⟨j+1,Nat.add_lt_of_lt_sub hij.2⟩).2)
+      | none => (rowEchelonList A_step i ⟨j+1,Nat.add_lt_of_lt_sub hij.2⟩)
+      | some l => ((rowEchelonList A_step ⟨i+1,Nat.add_lt_of_lt_sub hij.1⟩ ⟨j+1,Nat.add_lt_of_lt_sub hij.2⟩).1.getD [] ++ elimColBelow_ij ((List.prod l) * A) i j ++ l,
+                    (rowEchelonList A_step ⟨i+1,Nat.add_lt_of_lt_sub hij.1⟩ ⟨j+1,Nat.add_lt_of_lt_sub hij.2⟩).2)
 
   termination_by (m-i.val,n-j.val)
   decreasing_by
@@ -229,5 +168,43 @@ def rowEchelonList_ij' (A : Matrix (Fin m) (Fin n) Rat) (i : Fin m) (j : Fin n) 
     have hi1 : i.val+1 < m := by apply Nat.add_lt_of_lt_sub hij.1
     apply lt_of_tsub_lt_tsub_left (a:=m); rw [Nat.sub_sub_self (le_of_lt i.2), Nat.sub_sub_self (le_of_lt hi1)]; linarith
 
-def amat := !![(1:Rat),-2,1,-1;2,1,-3,8;4,-7,1,(-2:Rat)]
-#eval rowEchelonList_ij' (m:=3) (n:=4) (by linarith) (by linarith) amat 0 0
+def elimColAbove_ij (i : Fin m) (j : Fin n) : List (Matrix (Fin m) (Fin m) Rat) :=
+  List.ofFn fun r : Fin i => elemMat (rowMulAdd (-M ⟨r,Fin.val_lt_of_le r (le_of_lt i.2)⟩ j) ⟨r,Fin.val_lt_of_le r (le_of_lt i.2)⟩ i)
+
+/-Back substitution:
+Start from the bottommost row
+Find index of 1
+Eliminate column above-/
+
+def backSubstitutionStep (i : Fin m) : Matrix (Fin m) (Fin n) Rat :=
+  if h : vec_allZero (Vector.ofFn (M i)) then M else
+  have hl := List.findIdx_lt_length_of_exists (p:=fun x => x≠0) (xs:=(Vector.ofFn (M i)).toList) (by convert nonzVecHasNonz h; simp)
+  (elimColAbove_ij M i ⟨(Vector.ofFn (M i)).toList.findIdx (fun x => x≠0),by convert hl; simp⟩).prod * M
+
+def backSubstitution (A : Matrix (Fin m) (Fin n) Rat) (i : Fin m) : (List (Matrix (Fin m) (Fin m) Rat)) × (Matrix (Fin m) (Fin n) Rat) :=
+  let A_step := backSubstitutionStep A i
+  if h' : i = ⟨0,hm⟩ then ([],A) else
+    if h : vec_allZero (Vector.ofFn (A i)) then backSubstitution A ⟨i-1,tsub_lt_of_lt i.2⟩ else
+      have hl := List.findIdx_lt_length_of_exists (p:=fun x => x≠0) (xs:=(Vector.ofFn (A i)).toList) (by convert nonzVecHasNonz h; simp)
+      let listmat := elimColAbove_ij A i ⟨(Vector.ofFn (A i)).toList.findIdx (fun x => x≠0),by convert hl; simp⟩
+      ((backSubstitution A_step ⟨i-1,tsub_lt_of_lt i.2⟩).1 ++ listmat,(backSubstitution A_step ⟨i-1,tsub_lt_of_lt i.2⟩).2)
+
+  termination_by i
+  decreasing_by all_goals
+  simp_wf
+  apply Fin.val_fin_lt.mp; simp
+  have : i.val ≠ 0 := by
+    convert h'
+    constructor
+    · exact Fin.eq_mk_iff_val_eq.mpr
+    · intro p; exact False.elim (h' p)
+  apply Nat.sub_one_lt_of_le (by apply lt_of_le_of_ne (Nat.zero_le i.val) (Ne.symm this)) (le_refl i.val)
+
+def rowReducedEchelonForm : List (Matrix (Fin m) (Fin m) Rat) × Matrix (Fin m) (Fin n) Rat :=
+  let (l1,M') := rowEchelonList hm hn M ⟨0,hm⟩ ⟨0,hn⟩
+  let (l2,Mfin) := backSubstitution hm M' ⟨m-1,Nat.sub_one_lt_of_le hm (le_refl m)⟩
+  (l2++l1.getD [],Mfin)
+
+#eval rowEchelonList (by linarith) (by linarith) !![1,2,3;4,5,6;7,8,9] 0 0
+#eval backSubstitution (by linarith) !![1, 2, 3; 0, 1, 2; 0, 0, 0] 2
+#eval rowReducedEchelonForm !![1,2,3;4,5,6;7,8,9] (by linarith) (by linarith)
